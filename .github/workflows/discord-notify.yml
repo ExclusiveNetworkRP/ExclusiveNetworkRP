@@ -1,33 +1,29 @@
-name: Notify Discord on Push
+const express = require('express');
+const fetch = require('node-fetch');
+const app = express();
 
-on:
-  push:
-    branches:
-      - main
+app.use(express.json());
 
-jobs:
-  notify:
-    runs-on: ubuntu-latest
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1420364294448615507/-Px9-IXMsJWh1p6CixZnUUnxad5FjpM0mahJRiPByiCKqQiLtH4ARNss_o1NCwIApqlr/github';
+const BRANCH_TO_NOTIFY = 'dev'; // Only notify for this branch
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+app.post('/github-webhook', async (req, res) => {
+  const payload = req.body;
+  const branch = payload.ref.replace('refs/heads/', '');
 
-      - name: Send commit info to Discord
-        run: |
-          AUTHOR="${{ github.event.head_commit.author.name }}"
-          BRANCH="${{ github.ref_name }}"
-          COMMIT_URL="${{ github.event.head_commit.url }}"
-          
-          CHANGED_FILES=$(jq -r '.commits[].added[], .commits[].modified[], .commits[].removed[]' $GITHUB_EVENT_PATH | grep '^resources/' | cut -d/ -f2 | sort | uniq)
-          
-          if [ -z "$CHANGED_FILES" ]; then
-            CHANGED_FILES="None"
-          fi
+  if (branch !== BRANCH_TO_NOTIFY) return res.sendStatus(200); // ignore other branches
 
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d "{
-                     \"content\": \"🚀 **Update pushed by $AUTHOR**\n**Branch:** $BRANCH\n**Changed Resources:** $CHANGED_FILES\n🔗 Commit: $COMMIT_URL\"
-                   }" \
-               https://discord.com/api/webhooks/1420364294448615507/-Px9-IXMsJWh1p6CixZnUUnxad5FjpM0mahJRiPByiCKqQiLtH4ARNss_o1NCwIApqlr
+  const commitMessages = payload.commits
+    .map(c => `**${c.author.name}**: ${c.message}`)
+    .join('\n');
+
+  await fetch(DISCORD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: `Branch \`${branch}\` updated:\n${commitMessages}` })
+  });
+
+  res.sendStatus(200);
+});
+
+app.listen(3000, () => console.log('Webhook server running on port 3000'));
